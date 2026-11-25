@@ -13,10 +13,10 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 ## Giai đoạn 0: an toàn để deploy (P0)
 
 ### F6. CI (làm đầu tiên để các việc sau đều được kiểm)
-- [ ] Tạo `.github/workflows/ci.yml` chạy trên `ubuntu-latest`, JDK 21 (Temurin), cache Maven.
-- [ ] Bước `./mvnw -B verify` (Testcontainers chạy được trên runner Ubuntu).
+- [x] Tạo `.github/workflows/ci.yml` chạy trên `ubuntu-latest`, JDK 21 (Temurin), cache Maven.
+- [x] Bước `./mvnw -B verify` (Testcontainers chạy được trên runner Ubuntu).
 - [ ] Bật branch protection cho `main`: bắt buộc CI xanh và ít nhất 1 review trước khi merge.
-- [ ] Bật Dependabot cho Maven, Docker và GitHub Actions (`.github/dependabot.yml`).
+- [x] Bật Dependabot cho Maven, Docker và GitHub Actions (`.github/dependabot.yml`).
 
 ### A1. JWT secret fail-fast
 - [ ] Xóa giá trị mặc định ở `application.yml:27`, chỉ để `${JWT_SECRET}`.
