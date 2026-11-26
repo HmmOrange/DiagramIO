@@ -19,6 +19,7 @@ import java.util.function.Predicate;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.test.context.TestPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
@@ -29,7 +30,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * so every E2E class shares one container and one cached Spring context. If Docker is not
  * available the static block throws and the suite fails loudly instead of being skipped.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        useMainMethod = SpringBootTest.UseMainMethod.ALWAYS)
+@TestPropertySource("classpath:/jwt-test.properties")
 public abstract class E2eTestBase {
 
     @ServiceConnection

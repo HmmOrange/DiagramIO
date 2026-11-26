@@ -19,14 +19,14 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [x] Bật Dependabot cho Maven, Docker và GitHub Actions (`.github/dependabot.yml`).
 
 ### A1. JWT secret fail-fast
-- [ ] Xóa giá trị mặc định ở `application.yml:27`, chỉ để `${JWT_SECRET}`.
-- [ ] Sửa `docker-compose.yml:37` thành `${JWT_SECRET:?JWT_SECRET is required}`.
-- [ ] Để trống `JWT_SECRET=` trong `.env.example`, kèm lệnh sinh secret (`openssl rand -base64 48`).
-- [ ] Thêm `@Validated` và `@NotBlank` cho `JwtProperties`, kiểm tra độ dài ≥ 32 byte.
-- [ ] Từ chối khởi động nếu secret trùng chuỗi `dev-only-secret-please-change-it-32chars`.
-- [ ] Cập nhật `src/test/resources/application.yml` để test vẫn có secret riêng.
-- [ ] Test: context không khởi động khi thiếu secret, khi secret ngắn, khi dùng chuỗi dev.
-- [ ] Cập nhật README phần chạy local.
+- [x] Xóa giá trị mặc định ở `application.yml:27`, chỉ để `${JWT_SECRET}`.
+- [x] Sửa `docker-compose.yml:37` thành `${JWT_SECRET:?JWT_SECRET is required}`.
+- [x] Để trống `JWT_SECRET=` trong `.env.example`, kèm lệnh sinh secret (`openssl rand -base64 48`).
+- [x] Thêm `@Validated` và `@NotBlank` cho `JwtProperties`, kiểm tra độ dài ≥ 32 byte UTF-8.
+- [x] Từ chối khởi động nếu secret trùng giá trị mặc định hoặc giá trị mẫu trong `.env.example` cũ.
+- [x] Dùng `src/test/resources/jwt-test.properties` để test tích hợp có secret riêng.
+- [x] Test: app từ chối secret thiếu, trống, quá ngắn hoặc giá trị mẫu cũ trước khi kết nối DB.
+- [x] Cập nhật README phần chạy local.
 
 ### A2. DB credential, cổng và quyền
 - [ ] Bỏ `ports: 5432:5432` khỏi service `postgres` trong compose (hoặc dev bind `127.0.0.1:5432:5432`).

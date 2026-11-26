@@ -11,13 +11,28 @@ import com.diagramio.infrastructure.security.JwtProperties;
 import java.time.Clock;
 import java.time.Duration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.bind.validation.ValidationBindHandler;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
 
 /** Lắp ghép phần xác thực và tài khoản người dùng. */
 @Configuration
 @EnableConfigurationProperties(JwtProperties.class)
 public class AuthConfig {
+
+    /** Kiểm tra cấu hình JWT trước khi Spring khởi tạo DB và chạy Flyway. */
+    public static void validateJwtProperties(ConfigurableApplicationContext context) {
+        try (var validator = new LocalValidatorFactoryBean()) {
+            validator.afterPropertiesSet();
+            Binder.get(context.getEnvironment())
+                    .bind("jwt", Bindable.of(JwtProperties.class), new ValidationBindHandler(validator))
+                    .orElseThrow(() -> new IllegalStateException("JWT_SECRET is required"));
+        }
+    }
 
     @Bean
     public Clock clock() {

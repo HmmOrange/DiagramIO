@@ -131,20 +131,23 @@ Chỉ cần Docker để chạy toàn bộ hệ thống. Muốn chạy app từ 
 Chạy toàn bộ bằng Docker:
 
 ```bash
-cp .env.example .env            # đổi mật khẩu, JWT_SECRET, cổng nếu cần
-docker compose up -d --build    # build image app, chạy PostgreSQL và app
+cp .env.example .env
+openssl rand -base64 48         # điền kết quả vào JWT_SECRET trong .env
+docker compose up -d --build    # chạy sau khi đã lưu JWT_SECRET vào .env
 ```
 
 App chạy ở `http://localhost:8080` (đổi bằng `APP_PORT`). Flyway tự tạo bảng và tài khoản mẫu `uet@gmail.com` / `uet123456` ở lần chạy đầu. Container app có healthcheck gọi `/api/v1/health`.
 
-Chạy app từ IDE khi đang phát triển: chạy riêng CSDL bằng `docker compose up -d postgres`, rồi chạy `DiagramioApplication` (hoặc `./mvnw spring-boot:run`). App tự đọc file `.env`, nên `SPRING_DATASOURCE_URL` phải trỏ đúng cổng `POSTGRES_PORT`. Hai cách chạy dùng chung cổng 8080, không chạy cùng lúc.
+Chạy app từ IDE khi đang phát triển: cấu hình `JWT_SECRET` trong `.env` như trên, chạy riêng CSDL bằng `docker compose up -d postgres`, rồi chạy `DiagramioApplication` (hoặc `./mvnw spring-boot:run`). App tự đọc file `.env`, nên `SPRING_DATASOURCE_URL` phải trỏ đúng cổng `POSTGRES_PORT`. Hai cách chạy dùng chung cổng 8080, không chạy cùng lúc.
 
 | Biến trong `.env` | Ý nghĩa |
 |---|---|
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Tài khoản và tên CSDL; mật khẩu chỉ có tác dụng ở lần đầu tạo volume |
 | `POSTGRES_PORT`, `APP_PORT` | Cổng mở ra máy cho CSDL và app |
 | `SPRING_DATASOURCE_*` | Kết nối CSDL khi chạy app từ IDE |
-| `JWT_SECRET` | Khóa ký JWT, ít nhất 32 ký tự; bắt buộc đổi khi triển khai thật |
+| `JWT_SECRET` | Khóa ký JWT bắt buộc ở mọi môi trường chạy app, tối thiểu 32 byte UTF-8. App từ chối giá trị trống và các giá trị mặc định hoặc mẫu cũ. |
+
+App kiểm tra khóa JWT ngay khi khởi động, trước khi kết nối PostgreSQL hoặc chạy Flyway.
 
 Thử nhanh bằng `curl`:
 

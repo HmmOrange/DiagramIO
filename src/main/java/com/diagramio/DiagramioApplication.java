@@ -1,5 +1,6 @@
 package com.diagramio;
 
+import com.diagramio.config.AuthConfig;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
@@ -7,6 +8,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class DiagramioApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(DiagramioApplication.class, args);
+        SpringApplication application = new SpringApplication(DiagramioApplication.class);
+        application.addInitializers(AuthConfig::validateJwtProperties);
+        application.run(args);
     }
 }
