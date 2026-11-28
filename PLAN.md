@@ -238,3 +238,56 @@ Mức ưu tiên: **P0** = phải sửa trước khi có người dùng thật; *
 	- Sửa như nào: micro-cache nginx 1–5 s cho `/public`, rồi **Cache-Aside** (Redis, invalidate sau commit ở adapter); **Read Replica** với route tường minh. Không cache tra share token. Giữ **monolith** (không tách microservice vì sẽ phá transaction restore).
 
 - **Đã loại qua phản biện**: Event Sourcing, CQRS kho đọc riêng, Sharding, Valet Key cho link chia sẻ, nén snapshot ở app (TOAST đã nén), băm giả cho email không tồn tại (`/register` đã lộ email). Chi tiết ở [CLAUDE2.md](CLAUDE2.md) mục 5.
+
+---
+
+## H. Frontend (đổi phạm vi, cần quyết định trước)
+
+Pha 1 hiện **không** làm frontend ([README.md:23](README.md#L23), [AGENTS.md](AGENTS.md) mục Project Scope). Mục này là kế hoạch nếu nhóm quyết định thêm.
+
+Thứ tự: H1 → H2, H3, H8 → H4 → H5, H6 → H7; H9 làm song song từ H2. Việc backend nên xong trước: E1 (spec đúng để sinh client), B3 (PUT thiếu `isPublic`), B1 (refresh đồng thời), A7/A9 (CORS, `shareUrl`, `Referrer-Policy`).
+
+- **H1. Ghi nhận đổi phạm vi và cấu trúc repo** (cần quyết định)
+	- Vị trí cần sửa: [AGENTS.md](AGENTS.md) (Project Scope, Tech Stack), [README.md:23](README.md#L23), [docs/luong-nghiep-vu.md:115](docs/luong-nghiep-vu.md#L115)
+	- Lý do cần sửa: tài liệu đang ghi "không làm frontend/canvas"; AGENTS.md yêu cầu ghi rõ mọi quyết định đổi phạm vi. Cộng tác thời gian thực (WebSocket/CRDT) vẫn ngoài phạm vi.
+	- Sửa như nào: cập nhật AGENTS.md và README; đặt frontend trong thư mục `frontend/` của cùng repo (**monorepo**) để hợp đồng API và client đổi cùng một PR.
+
+- **H2. Khung dự án frontend**
+	- Vị trí cần sửa: `frontend/` (mới)
+	- Lý do cần sửa: sơ đồ là dữ liệu riêng tư, không cần SEO hay render phía server, nên một **SPA** là đủ và đơn giản nhất cho baseline.
+	- Sửa như nào: React + TypeScript + Vite; React Router; TanStack Query cho dữ liệu từ server; Tailwind + shadcn/ui cho form và hộp thoại; ESLint + Prettier; Vitest + Testing Library cho unit test, Playwright cho e2e. Không dùng Next.js.
+
+- **H3. Client API sinh từ OpenAPI**
+	- Vị trí cần sửa: `frontend/src/api/` (mới), [docs/openapi.yaml](docs/openapi.yaml)
+	- Lý do cần sửa: viết tay kiểu request/response sẽ lệch dần với backend; spec hiện còn lệch code (E1).
+	- Sửa như nào: **Contract-first client**: `openapi-typescript` sinh kiểu từ `docs/openapi.yaml`, gọi bằng `openapi-fetch`; CI sinh lại và `git diff --exit-code` để bắt lệch hợp đồng.
+
+- **H4. Đăng nhập và quản lý token**
+	- Vị trí cần sửa: `frontend/src/auth/` (mới); backend chỉ đổi nếu chọn cookie
+	- Lý do cần sửa: `/auth/login` và `/auth/refresh-token` trả `accessToken` và `refreshToken` trong JSON body. Token lưu `localStorage` sẽ bị đánh cắp nếu trang dính XSS. Nhiều request cùng gặp 401 sẽ gửi refresh đồng thời; sau khi sửa B1 chỉ một request thắng, các request còn lại bị đăng xuất oan.
+	- Sửa như nào: access token giữ trong bộ nhớ; **single-flight refresh** (mọi request 401 chờ chung một lần refresh rồi thử lại một lần). Lâu dài: backend trả refresh token qua cookie `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` (đổi hợp đồng, cần nhóm thống nhất).
+
+- **H5. Canvas soạn sơ đồ UML/ERD**
+	- Vị trí cần sửa: `frontend/src/editor/` (mới), [DiagramData.java](src/main/java/com/diagramio/domain/diagram/DiagramData.java) (chỉ đọc để đối chiếu)
+	- Lý do cần sửa: backend chỉ kiểm tra `data` có mảng `nodes` và `edges` và ≤ 2 MB; hình dạng của từng node/edge chưa được định nghĩa ở đâu.
+	- Sửa như nào: `@xyflow/react` (React Flow) vì dùng đúng mô hình `nodes/edges`; custom node cho UML class (tên, thuộc tính, phương thức) và ERD table (cột, PK/FK); kiểu cạnh cho quan hệ UML và cardinality ERD. Ghi schema của `node.data`/`edge.data` thành kiểu TypeScript và một mục trong `docs/`; kiểm tra kích thước JSON trước khi gửi để báo lỗi sớm thay vì chờ 400.
+
+- **H6. Lưu sơ đồ và xử lý xung đột**
+	- Vị trí cần sửa: `frontend/src/editor/` (mới), [UpdateDiagramRequest.java](src/main/java/com/diagramio/api/diagram/dto/UpdateDiagramRequest.java) (chỉ đọc)
+	- Lý do cần sửa: `PUT /diagrams/{id}` dùng **optimistic locking** theo `version` và trả 409 khi cũ. Autosave là đường nóng nhất của backend (G1). Trước khi sửa B3, PUT thiếu `isPublic` sẽ biến sơ đồ public thành private.
+	- Sửa như nào: autosave có debounce (vài giây) + nút lưu tay; luôn gửi đủ `title`, `diagramType`, `version`, `data`, `isPublic`; cập nhật `version` từ response; 409 → hộp thoại "sơ đồ đã bị sửa ở nơi khác", tải lại bản mới, không tự ghi đè.
+
+- **H7. Màn hình chia sẻ, lịch sử phiên bản, sơ đồ công khai**
+	- Vị trí cần sửa: `frontend/src/pages/` (mới), [DiagramShareController.java:115](src/main/java/com/diagramio/api/share/DiagramShareController.java#L115)
+	- Lý do cần sửa: `shareUrl` đang trỏ thẳng tới API `/api/v1/shares/{token}` vì chưa có frontend; người nhận link sẽ thấy JSON chứ không thấy sơ đồ.
+	- Sửa như nào: route frontend `/s/{token}` đọc token rồi gọi API với header `X-Share-Token`; backend tạo `shareUrl` từ **canonical base URL** cấu hình được (gộp với A7) thay vì địa chỉ request. Hộp thoại chia sẻ chỉ hiện cho owner; danh sách phiên bản và nút restore cho owner/editor; trang danh sách sơ đồ công khai. Ẩn nút theo quyền chỉ để tiện, backend vẫn là nơi kiểm quyền.
+
+- **H8. Triển khai cùng origin**
+	- Vị trí cần sửa: [docker-compose.yml](docker-compose.yml), `frontend/Dockerfile` và `frontend/nginx.conf` (mới), `frontend/vite.config.ts`
+	- Lý do cần sửa: frontend khác origin thì cần CORS (A7); cùng origin thì không cần, và không phải mở API cho domain khác.
+	- Sửa như nào: dev dùng `server.proxy` của Vite chuyển `/api` sang `localhost:8080`; prod thêm service nginx phục vụ `dist/` và **reverse proxy** `/api` sang app (cùng gateway với F2, A4, A5). Đặt header `Content-Security-Policy`, `Referrer-Policy: no-referrer` (A9), fallback SPA về `index.html`.
+
+- **H9. CI và test cho frontend**
+	- Vị trí cần sửa: [.github/workflows/ci.yml](.github/workflows/ci.yml)
+	- Lý do cần sửa: CI hiện chỉ chạy backend.
+	- Sửa như nào: thêm job `frontend` (lint, typecheck, Vitest, build, kiểm tra client sinh từ OpenAPI không lệch); Playwright e2e chạy trên compose cho các luồng chính: đăng nhập/refresh, tạo và lưu sơ đồ, 409 xung đột, mở link chia sẻ view/edit, link đã thu hồi, restore phiên bản.
