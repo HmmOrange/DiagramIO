@@ -1,16 +1,19 @@
 # CHECKLIST: Các việc cần làm
 
-Mỗi đầu việc ứng với một mục trong [PLAN.md](PLAN.md) (mã `A1`, `B3`...). Thứ tự trong file là thứ tự nên làm: **Giai đoạn 0 (P0)** → **Giai đoạn 1 (P1)** → **Giai đoạn 2 (P2)** → **Giai đoạn 3 (chỉ khi số đo yêu cầu)**.
+Mỗi đầu việc ứng với một mục trong [PLAN.md](PLAN.md) (mã `A1`, `B3`, `H2`...). Thứ tự trong file là thứ tự nên làm: **Giai đoạn 0 (nền móng)** → **Giai đoạn 1 (frontend sớm)** → **Giai đoạn 2 (P0 còn lại, trước khi deploy thật)** → **Giai đoạn 3 (P1)** → **Giai đoạn 4 (P2)** → **Giai đoạn 5 (chỉ khi số đo yêu cầu)**.
+
+Frontend được đưa lên sớm để có sản phẩm dùng được từ đầu và để phát hiện sớm chỗ hợp đồng API chưa hợp lý. Các mục backend mà frontend phụ thuộc (B1, A7, B3, E1) được kéo lên Giai đoạn 1. Các mục P0 còn lại ở Giai đoạn 2 có thể làm song song bởi thành viên backend, nhưng **phải xong trước khi deploy cho người dùng thật**.
 
 Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - Schema đổi thì thêm migration mới `V<n>__<mo_ta>.sql`, không sửa V1–V3.
 - Endpoint hoặc request/response đổi thì cập nhật annotation, xuất lại [docs/openapi.yaml](docs/openapi.yaml) và cập nhật README.
 - Domain không import Spring/JPA; transaction đi qua `TransactionRunner`; kiểm quyền chỉ qua `DiagramAccess.require`.
 - Mỗi việc có test cho cả nhánh thành công và nhánh bị từ chối; chạy `./mvnw test` (có ArchitectureTest) trước khi đánh dấu xong.
+- Việc frontend: chạy `npm run lint`, `npm run typecheck`, `npm test` trong `web/` trước khi đánh dấu xong. Ẩn nút theo quyền chỉ để tiện, backend vẫn là nơi kiểm quyền.
 
 ---
 
-## Giai đoạn 0: an toàn để deploy (P0)
+## Giai đoạn 0: nền móng (P0)
 
 ### F6. CI (làm đầu tiên để các việc sau đều được kiểm)
 - [x] Tạo `.github/workflows/ci.yml` chạy trên `ubuntu-latest`, JDK 21 (Temurin), cache Maven.
@@ -27,6 +30,106 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [x] Dùng `src/test/resources/jwt-test.properties` để test tích hợp có secret riêng.
 - [x] Test: app từ chối secret thiếu, trống, quá ngắn hoặc giá trị mẫu cũ trước khi kết nối DB.
 - [x] Cập nhật README phần chạy local.
+
+---
+
+## Giai đoạn 1: frontend sớm (H) và backend mở đường
+
+Thứ tự: H1 → (H2, H3, H8) → H4 → (H5, H6) → H7; H9 làm song song từ H2. Mục backend mở đường làm song song với H2 và phải xong trước mục frontend cần nó: B1 trước H4, B3 trước H6, A7 trước H7, E1 trước khi bật kiểm tra lệch hợp đồng ở H9.
+
+### H1. Ghi nhận đổi phạm vi và cấu trúc repo (làm đầu tiên)
+- [ ] Nhóm chốt quyết định đưa frontend vào pha hiện tại; cộng tác thời gian thực (WebSocket/CRDT) và xuất file vẫn ngoài phạm vi.
+- [ ] Cập nhật [AGENTS.md](AGENTS.md): mục Project Scope (bỏ "không làm frontend/canvas") và Tech Stack (thêm stack frontend của H2).
+- [ ] Cập nhật [README.md:23](README.md#L23) và [docs/luong-nghiep-vu.md:115](docs/luong-nghiep-vu.md#L115).
+- [ ] Đặt frontend trong `web/` của cùng repo (monorepo); ghi quy ước: đổi hợp đồng API thì sửa backend, `docs/openapi.yaml` và client trong cùng một PR.
+
+### Backend mở đường
+
+### B1. Refresh token rotation nguyên tử (P0, cần cho H4)
+- [ ] Thêm `RefreshTokenRepository.revokeIfActive(String tokenHash, Instant now)` trả về số dòng (hoặc `Optional<RefreshToken>`).
+- [ ] Cài đặt bằng `@Modifying @Query("UPDATE ... SET revoked = true WHERE tokenHash = :hash AND revoked = false AND expiresAt > :now")` trong `RefreshTokenJpaRepository`.
+- [ ] Sửa `AuthService.refresh`: chỉ cấp token mới khi cập nhật đúng 1 dòng, vẫn trong `TransactionRunner`.
+- [ ] Lấy `now` từ `Clock`.
+- [ ] Test E2E: 8 request refresh đồng thời cùng một token, đúng 1 thành công, 7 nhận 401.
+- [ ] Test: lỗi khi lưu token mới làm rollback, token cũ vẫn chưa bị thu hồi.
+
+### A7. Profile, Swagger, CORS, forwarded headers (P0, cần cho H7, H8)
+- [ ] Tạo `application-dev.yml` và `application-prod.yml`; giá trị dev chỉ nằm trong profile dev.
+- [ ] Profile prod: `springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`.
+- [ ] Cập nhật `SecurityConfig`: chỉ `permitAll` Swagger khi bật.
+- [ ] Thêm `CorsConfigurationSource` đọc `app.cors.allowed-origins`; chỉ cho phép method và header cần thiết (`Authorization`, `X-Share-Token`, `Content-Type`), đặt `maxAge`.
+- [ ] Đổi `forward-headers-strategy` sang `native` và đặt `server.tomcat.remoteip.internal-proxies` chỉ chứa IP proxy (hoặc dùng `app.public-base-url` để ghép `shareUrl`).
+- [ ] Test: origin lạ bị chặn ở preflight; origin trong whitelist qua được; `X-Forwarded-Host` giả không làm đổi `shareUrl`.
+
+### B3. Sửa `isPublic` (P1, cần cho H6)
+- [ ] Đổi `UpdateDiagramRequest.isPublic` từ `boolean` sang `Boolean`.
+- [ ] Đổi tham số `DiagramService.updateDiagram` sang `Boolean`; `null` thì giữ nguyên giá trị cũ.
+- [ ] Cập nhật OpenAPI (mô tả rõ "bỏ trống thì giữ nguyên").
+- [ ] Test: owner bỏ trường thì sơ đồ public vẫn public; owner gửi `false` thì thành private; editor qua link bỏ trường hoặc gửi khác thì không đổi.
+
+### E1. OpenAPI khớp code (P1, cần cho H3, H9)
+- [ ] Thêm `title` vào `required` của `UpdateDiagramRequest`.
+- [ ] Khai báo security "tùy chọn" cho `GET /diagrams/{id}`, `/diagrams/public`, `/shares/{token}`, `/health`.
+- [ ] Xuất lại `docs/openapi.yaml` từ `/v3/api-docs`.
+- [ ] Thêm bước CI: khởi động app, xuất spec, `git diff --exit-code docs/openapi.yaml`.
+
+### H2. Khung dự án frontend
+- [ ] Khởi tạo `web/` bằng Vite (React + TypeScript); thêm React Router và TanStack Query.
+- [ ] Thêm Tailwind và shadcn/ui cho form, hộp thoại.
+- [ ] Thêm ESLint + Prettier; script `lint`, `typecheck`, `test`, `build` trong `package.json`.
+- [ ] Cài Vitest + Testing Library cho unit test, Playwright cho e2e.
+- [ ] Ghi lệnh cài và chạy frontend vào README.
+
+### H3. Client API sinh từ OpenAPI
+- [ ] Thêm `openapi-typescript` sinh kiểu từ [docs/openapi.yaml](docs/openapi.yaml) vào `web/src/api/`; script `gen:api`.
+- [ ] Tạo một client `openapi-fetch` dùng chung: base URL `/api/v1`, tự gắn `Authorization` hoặc `X-Share-Token`.
+- [ ] Chuyển `ErrorResponse` thành lỗi hiển thị được (thông báo cho 401/403/404/409/413/429/503).
+- [ ] Test: client gọi đúng path/method; lỗi 4xx được chuyển thành thông báo.
+
+### H8. Triển khai cùng origin
+- [ ] Dev: `server.proxy` trong `web/vite.config.ts` chuyển `/api` sang `localhost:8080`.
+- [ ] Tạo `web/Dockerfile` (build `dist/`) và `web/nginx.conf`: phục vụ file tĩnh, reverse proxy `/api` sang app, fallback SPA về `index.html`.
+- [ ] Đặt header `Content-Security-Policy` và `Referrer-Policy: no-referrer` (phần "trước mắt" của A9).
+- [ ] Thêm service `web` vào [docker-compose.yml](docker-compose.yml); khi làm F2/A4/A5 thì gộp chung một gateway nginx.
+- [ ] Kiểm tra: `docker compose up` mở được trang, gọi API được mà không cần CORS.
+
+### H4. Đăng nhập và quản lý token (sau B1)
+- [ ] Trang đăng ký, đăng nhập, đăng xuất, đổi mật khẩu.
+- [ ] Access token giữ trong bộ nhớ, không lưu `localStorage`.
+- [ ] **Single-flight refresh**: mọi request gặp 401 chờ chung một lần refresh rồi thử lại đúng một lần; refresh thất bại thì về trang đăng nhập.
+- [ ] Chốt với nhóm cách giữ refresh token qua lần tải lại trang (cookie `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` là đổi hợp đồng backend).
+- [ ] Test: nhiều request cùng gặp 401 chỉ gửi 1 refresh; refresh trả 401 thì đăng xuất.
+
+### H5. Canvas soạn sơ đồ UML/ERD
+- [ ] Định nghĩa kiểu TypeScript cho `node.data` / `edge.data` (UML class, ERD table, kiểu quan hệ UML, cardinality ERD) và ghi schema vào một mục trong `docs/`.
+- [ ] Dựng editor bằng `@xyflow/react`; custom node UML class (tên, thuộc tính, phương thức) và ERD table (cột, PK/FK).
+- [ ] Kiểu cạnh cho quan hệ UML và cardinality ERD.
+- [ ] Kiểm tra kích thước JSON (≤ 2 MB) trước khi gửi để báo lỗi sớm.
+- [ ] Test: chuyển state editor ↔ `{ "nodes": [], "edges": [] }` không mất dữ liệu; sơ đồ mới tạo mở được.
+
+### H6. Lưu sơ đồ và xử lý xung đột (sau B3)
+- [ ] Autosave có debounce (vài giây) + nút lưu tay; hiển thị trạng thái "đang lưu / đã lưu / lỗi".
+- [ ] Luôn gửi đủ `title`, `diagramType`, `version`, `data`, `isPublic`; cập nhật `version` từ response.
+- [ ] Không gửi PUT mới khi PUT trước chưa trả về.
+- [ ] 409 → hộp thoại "sơ đồ đã bị sửa ở nơi khác", tải lại bản mới, không tự ghi đè.
+- [ ] Test: 409 không ghi đè dữ liệu; payload quá lớn hiện lỗi thay vì mất thay đổi.
+
+### H7. Chia sẻ, lịch sử phiên bản, sơ đồ công khai (sau A7)
+- [ ] Trang "sơ đồ của tôi" (tạo UML/ERD, đổi tên, xóa) và trang danh sách sơ đồ công khai.
+- [ ] Hộp thoại chia sẻ chỉ hiện cho owner: tạo link VIEW/EDIT, đổi role, thu hồi.
+- [ ] Route `/s/{token}` đọc token rồi gọi API với header `X-Share-Token`; link đã thu hồi hiện thông báo rõ ràng.
+- [ ] Danh sách phiên bản, tạo phiên bản và restore theo quyền (owner/editor).
+- [ ] Backend: `shareUrl` ghép từ `app.public-base-url` và trỏ tới `/s/{token}` thay vì `/api/v1/shares/{token}` ([DiagramShareController.java:115](src/main/java/com/diagramio/api/share/DiagramShareController.java#L115)); cập nhật OpenAPI và README.
+- [ ] Test: viewer không thấy nút sửa/chia sẻ; editor không thấy hộp thoại chia sẻ.
+
+### H9. CI và test cho frontend (song song từ H2)
+- [ ] Thêm job `web` vào [.github/workflows/ci.yml](.github/workflows/ci.yml): Node LTS, cache npm, lint, typecheck, Vitest, build.
+- [ ] Bước sinh lại client từ OpenAPI và `git diff --exit-code` (bật sau E1).
+- [ ] Playwright e2e chạy trên compose: đăng nhập/refresh, tạo và lưu sơ đồ, 409 xung đột, mở link chia sẻ view/edit, link đã thu hồi, restore phiên bản.
+
+---
+
+## Giai đoạn 2: P0 còn lại, xong trước khi deploy thật
 
 ### A2. DB credential, cổng và quyền
 - [ ] Bỏ `ports: 5432:5432` khỏi service `postgres` trong compose (hoặc dev bind `127.0.0.1:5432:5432`).
@@ -67,14 +170,6 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [ ] Thêm kiểm tra tương tự trong domain (`PasswordPolicy`) trước khi gọi `PasswordHasher.hash`, ném `InvalidInputException`.
 - [ ] Test: mật khẩu 50 ký tự tiếng Việt (74 byte) trả 400 ở register và change-password; mật khẩu 72 byte ASCII vẫn đăng ký được.
 
-### A7. Profile, Swagger, CORS, forwarded headers
-- [ ] Tạo `application-dev.yml` và `application-prod.yml`; giá trị dev chỉ nằm trong profile dev.
-- [ ] Profile prod: `springdoc.api-docs.enabled=false`, `springdoc.swagger-ui.enabled=false`.
-- [ ] Cập nhật `SecurityConfig`: chỉ `permitAll` Swagger khi bật.
-- [ ] Thêm `CorsConfigurationSource` đọc `app.cors.allowed-origins`; chỉ cho phép method và header cần thiết (`Authorization`, `X-Share-Token`, `Content-Type`), đặt `maxAge`.
-- [ ] Đổi `forward-headers-strategy` sang `native` và đặt `server.tomcat.remoteip.internal-proxies` chỉ chứa IP proxy (hoặc dùng `app.public-base-url` để ghép `shareUrl`).
-- [ ] Test: origin lạ bị chặn ở preflight; origin trong whitelist qua được; `X-Forwarded-Host` giả không làm đổi `shareUrl`.
-
 ### A8. Không ghi token và PII vào log/body lỗi
 - [ ] Trong `GlobalExceptionHandler`, thay `request.getRequestURI()` bằng route template (`/api/v1/shares/{token}`) cho cả log lẫn `ErrorResponse.path`.
 - [ ] `handleDataIntegrity`: không log nguyên message của driver, chỉ log tên constraint.
@@ -82,17 +177,9 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [ ] Thêm trường `traceId` vào `ErrorResponse` (thêm trường, không đổi trường cũ).
 - [ ] Test: gây lỗi trên `/shares/{token}` rồi kiểm tra log và body không chứa token.
 
-### B1. Refresh token rotation nguyên tử
-- [ ] Thêm `RefreshTokenRepository.revokeIfActive(String tokenHash, Instant now)` trả về số dòng (hoặc `Optional<RefreshToken>`).
-- [ ] Cài đặt bằng `@Modifying @Query("UPDATE ... SET revoked = true WHERE tokenHash = :hash AND revoked = false AND expiresAt > :now")` trong `RefreshTokenJpaRepository`.
-- [ ] Sửa `AuthService.refresh`: chỉ cấp token mới khi cập nhật đúng 1 dòng, vẫn trong `TransactionRunner`.
-- [ ] Lấy `now` từ `Clock`.
-- [ ] Test E2E: 8 request refresh đồng thời cùng một token, đúng 1 thành công, 7 nhận 401.
-- [ ] Test: lỗi khi lưu token mới làm rollback, token cũ vẫn chưa bị thu hồi.
-
 ---
 
-## Giai đoạn 1: chịu tải thật (P1)
+## Giai đoạn 3: chịu tải thật (P1)
 
 ### F1. Observability và benchmark
 - [ ] Thêm `spring-boot-starter-actuator` và `micrometer-registry-prometheus` vào `pom.xml`.
@@ -107,12 +194,6 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [ ] Bọc `UserService.changePassword` trong `TransactionRunner`: lưu hash mới và thu hồi mọi refresh token của user.
 - [ ] Băm mật khẩu mới trước khi mở transaction để giữ transaction ngắn.
 - [ ] Test: sau khi đổi mật khẩu, refresh token cũ trả 401; login bằng mật khẩu mới vẫn được.
-
-### B3. Sửa `isPublic`
-- [ ] Đổi `UpdateDiagramRequest.isPublic` từ `boolean` sang `Boolean`.
-- [ ] Đổi tham số `DiagramService.updateDiagram` sang `Boolean`; `null` thì giữ nguyên giá trị cũ.
-- [ ] Cập nhật OpenAPI (mô tả rõ "bỏ trống thì giữ nguyên").
-- [ ] Test: owner bỏ trường thì sơ đồ public vẫn public; owner gửi `false` thì thành private; editor qua link bỏ trường hoặc gửi khác thì không đổi.
 
 ### B4. Kiểm tra lại link trong thao tác ghi
 - [ ] Thêm `shareId` vào `Caller` và gán trong `ShareTokenAuthenticationFilter`.
@@ -192,12 +273,6 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 - [ ] Xóa toàn bộ setter công khai; sửa `DiagramMapper` và test.
 - [ ] Chạy ArchitectureTest và toàn bộ test.
 
-### E1. OpenAPI khớp code
-- [ ] Thêm `title` vào `required` của `UpdateDiagramRequest`.
-- [ ] Khai báo security "tùy chọn" cho `GET /diagrams/{id}`, `/diagrams/public`, `/shares/{token}`, `/health`.
-- [ ] Xuất lại `docs/openapi.yaml` từ `/v3/api-docs`.
-- [ ] Thêm bước CI: khởi động app, xuất spec, `git diff --exit-code docs/openapi.yaml`.
-
 ### F2. Scale ngang sau gateway
 - [ ] Bỏ `container_name` và `ports` của service `app` trong compose.
 - [ ] Thêm service nginx (hoặc ghi cấu hình LB): TLS, `client_max_body_size`, gzip, `limit_req` cho `/auth/*`, che `/api/v1/shares/*` trong access log.
@@ -214,7 +289,7 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 
 ---
 
-## Giai đoạn 2: nên sửa (P2)
+## Giai đoạn 4: nên sửa (P2)
 
 ### A9. Băm share token (cần chốt hợp đồng trước)
 - [ ] Chốt với nhóm: `GET /shares` có còn trả lại token không.
@@ -282,7 +357,7 @@ Quy tắc chung cho mọi đầu việc (theo [AGENTS.md](AGENTS.md)):
 
 ---
 
-## Giai đoạn 3: chỉ làm khi số đo của F1 yêu cầu
+## Giai đoạn 5: chỉ làm khi số đo của F1 yêu cầu
 
 ### G1. Conditional UPDATE cho PUT
 - [ ] Có số đo: SELECT do `merge` chiếm phần đáng kể của p95 với payload 1–2 MB.
